@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GA example</title>
+        <link type="text/css" rel="stylesheet" href="../css/main.css"/></link>
+        <script type="text/javascript" src="../libs/genetic.js"></script>
+        <script type="text/javascript" src="../libs/underscore-min.js"></script>
+    </head>
+    <body onload="init()">
+        <img id="desired-result" src="../images/desired-result.jpg"/>
+        <canvas id="canvas" />
+
+        <script type="text/javascript">
+
+            function init() {
+                //======================
+                // start point
+
+                var img, canvas, context, imageData, GA, population, sourceImageData, maxFitness, bestGenome, bestGenomeData;
+
+                /* 
+                    1. init canvas with image
+                    2. init GA algorithm
+                    3. reset
+                    4. calculate fitness 
+                    5. show best result
+                    6. do an epoch (reproduction, crossover, mutate)
+                    7. if not done, go to step 3
+                */
+
+                // 1.
+                
+                img = document.getElementById('desired-result');
+                canvas = document.getElementById('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                context2D = canvas.getContext('2d');
+                context2D.drawImage(img, 0, 0, img.width, img.height);
+                imageData = context2D.getImageData(0,0, img.width, img.height);
+                sourceImageData = context2D.createImageData(imageData);
+
+                for (var i = imageData.data.length - 1; i >= 0; i--) {
+                    sourceImageData.data[i] = imageData.data[i];
+                }
+                // 2.
+
+                GA = new Genetic({ 
+                    popSize: 50,
+                    chromoLength: img.width * img.height * 4,
+                    mutationRate: 0.01,
+                    crossOverRate: 0.8,
+                    maxPerturbation: 0.3,
+                    numElite: 4,
+                    numCopiesElite: 2
+                });
+                GA.init();
+
+
+                function run() {
+                    // 3.
+                    
+                    maxFitness = -9999999;
+                    bestGenome = null;
+                    bestGenomeData = null;
+
+                    // 4.
+                    
+                    population = GA.getPopulation();
+                    for(var p of population) {
+                        var canvasData = convertToCanvasData(p.weights);
+                        p.fitness = calculateFitness(canvasData, sourceImageData.data);
+                    }
+
+                    population = GA.getPopulation();
+                    for(var genome of population) {
+                        var canvasData = convertToCanvasData(genome.weights);
+                        genome.fitness = calculateFitness(genome, sourceImageData.data);
+                        if(maxFitness < genome.fitness) {
+                            maxFitness = genome.fitness;
+                            bestGenome = genome;
+                            bestGenomeData = canvasData;
+                        }
+                    }
+
+                    // 5.
+                    
+                    for (var i = imageData.data.length - 1; i >= 0; i--) {
+                        imageData.data[i] = bestGenomeData[i];
+                    }
+                    context2D.putImageData(imageData, 0,0);
+
+                    // 6.
+
+                    GA.epoch();
+
+                    setTimeout(run, 100);
+                }
+
+                run();
+
+                function convertToCanvasData(weights) {
+                    return _.map(weights, function(w) {
+                        return Math.floor(w * 255);
+                    });
+                }
+
+                function calculateFitness(canvasData, imageData) {
+                    var fitness = 0;
+                    var len = canvasData.length;
+                    for (var i = len - 1; i >= 0; i--) {
+
+                        if(imageData[i] == canvasData[i])
+                            fitness += 1;
+
+                         fitness += (127 - Math.abs(imageData[i] - canvasData[i]))/50;
+                    }
+                    return fitness;
+                }
+            }
+        </script>
+    </body>
+</html>

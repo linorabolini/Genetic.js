@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GA example</title>
+        <link type="text/css" rel="stylesheet" href="../css/main.css"/></link>
+        <script type="text/javascript" src="../libs/genetic.js"></script>
+        <script type="text/javascript" src="../libs/underscore-min.js"></script>
+    </head>
+    <body onload="init()">
+        <img id="desired-result" src="../images/desired-result-2.jpg"/>
+        <canvas id="canvas" />
+
+        <script type="text/javascript">
+
+            function init() {
+                //======================
+                // start point
+
+                var img, canvas, context, imageData, GA, population, sourceImageData, maxFitness,bestGenome, bestGenomeData;
+
+                /* 
+                    1. init canvas with image
+                    2. init GA algorithm
+                    3. reset
+                    4. calculate fitness 
+                    5. show best result
+                    6. do an epoch (reproduction, crossover, mutate)
+                    7. if not done, go to step 3
+                */
+
+                // 1.
+                
+                img = document.getElementById('desired-result');
+                canvas = document.getElementById('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                context = canvas.getContext('2d');
+                context.drawImage(img, 0, 0, img.width, img.height);
+                imageData = context.getImageData(0,0, img.width, img.height);
+                sourceImageData = context.createImageData(imageData);
+
+                for (var i = imageData.data.length - 1; i >= 0; i--) {
+                    sourceImageData.data[i] = imageData.data[i];
+                }
+                // 2.
+                
+                // var POSITION = 2;
+                // var RADIUS = 1;
+                // var CIRCLES = 300;
+
+                GA = new Genetic({ 
+                    popSize: 30,
+                    chromoLength: (1 + 2 + 1) * 100,
+                    mutationRate: 0.03,
+                    crossOverRate: 0.8,
+                    maxPerturbation: 0.3,
+                    numElite: 2,
+                    numCopiesElite: 2
+                });
+                GA.init();
+
+
+                function run() {
+                    // 3.
+                    
+                    maxFitness = -9999999;
+                    bestGenome = null;
+                    bestGenomeData = null;
+
+                    // 4.
+                    
+                    population = GA.getPopulation();
+                    for(var genome of population) {
+                        var genomeData = convertToCanvasData(genome.weights, sourceImageData.data);
+                        genome.fitness = calculateFitness(genomeData, sourceImageData.data);
+                        if(maxFitness < genome.fitness) {
+                            maxFitness = genome.fitness;
+                            bestGenome = genome;
+                            bestGenomeData = genomeData;
+                        }
+                    }
+
+                    // 5.
+                    
+                    for (var i = imageData.data.length - 1; i >= 0; i--) {
+                        imageData.data[i] = bestGenomeData[i];
+                    }
+                    context.putImageData(imageData, 0,0);
+
+                    // 6.
+
+                    GA.epoch();
+
+                    setTimeout(run, 10);
+                }
+
+                run();
+
+                function convertToCanvasData(weights, data) {
+
+                    context.fillStyle="black";
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    for (var i = 0; i < weights.length; i+=4) {
+                        var x = Math.floor(weights[i+0] * img.width);
+                        var y = Math.floor(weights[i+1] * img.height);
+                        var radius = Math.floor(weights[i+2] * img.width * 0.3);
+
+                        var pixel = (x + img.width * y) * 4;
+                        var r = data[pixel];
+                        var g = data[pixel+1];
+                        var b = data[pixel+2];
+                        var a = weights[i+3];
+
+                        context.beginPath();
+                        context.arc(x, y, radius, 0, 2 * Math.PI, false);
+                        context.fillStyle = "rgba(" + r + "," + g + "," + b + "," + a + ")";
+                        context.fill();
+                        context.closePath();
+                    }
+
+                    return context.getImageData(0,0,img.width, img.height).data;
+                }
+
+                function calculateFitness(genomeData, desiredData) {
+                    var fitness = 0;
+                    var len = genomeData.length;
+                    for (var i = len - 1; i >= 0; i--) {
+
+                        if(desiredData[i] == genomeData[i])
+                            fitness += 1;
+
+                         fitness += (127 - Math.abs(desiredData[i] - genomeData[i]))/1000;
+                    }
+                    return fitness;
+                }
+            }
+        </script>
+    </body>
+</html>
