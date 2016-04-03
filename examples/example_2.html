@@ -5,18 +5,59 @@
         <link type="text/css" rel="stylesheet" href="../css/main.css"/></link>
         <script type="text/javascript" src="../libs/genetic.js"></script>
         <script type="text/javascript" src="../libs/underscore-min.js"></script>
+        <script type="text/javascript" src="../libs/dat.gui.min.js"></script>
     </head>
     <body onload="init()">
         <img id="desired-result" src="../images/desired-result-2.jpg"/>
         <canvas id="canvas" />
 
         <script type="text/javascript">
-
             function init() {
                 //======================
                 // start point
 
-                var img, canvas, context, imageData, GA, population, sourceImageData, maxFitness,bestGenome, bestGenomeData;
+                var img,
+                    GA,
+                    canvas,
+                    context,
+                    population,
+                    maxFitness,
+                    bestGenome,
+                    bestGenomeData,
+                    canvasImageData,
+                    sourceImageData,
+                    baseImageData,
+                    generations = 0,
+                    isRunning = false;
+
+                var variables = {
+                    skip: 1,
+                    delay: 10,
+                    saveEvery: 10,
+                    reduceCircleSize: true,
+                    circleSizeRatioStep: 10,
+                    minCircleSizeRatio: 0.01,
+                    circleSizeRatio: 0.3,
+                    start: start,
+                    step: step,
+                    pause: pause,
+                    save: saveCurrentCanvas
+                }
+
+
+                var gui = new dat.GUI();
+
+                gui.add(variables, 'delay', 1, 100).step(1);
+                gui.add(variables, 'saveEvery', 1, 100).step(1);
+                gui.add(variables, 'reduceCircleSize', true);
+                gui.add(variables, 'circleSizeRatioStep', 1, 100).step(1);
+                gui.add(variables, 'minCircleSizeRatio', 0, 0.5);
+                gui.add(variables, 'circleSizeRatio', 0, 0.5).listen();
+                gui.add(variables, 'start');
+                gui.add(variables, 'step');
+                gui.add(variables, 'pause');
+                gui.add(variables, 'save');
+
 
                 /* 
                     1. init canvas with image
@@ -36,12 +77,16 @@
                 canvas.height = img.height;
                 context = canvas.getContext('2d');
                 context.drawImage(img, 0, 0, img.width, img.height);
-                imageData = context.getImageData(0,0, img.width, img.height);
-                sourceImageData = context.createImageData(imageData);
+                canvasImageData = context.getImageData(0,0, img.width, img.height);
+                sourceImageData = context.getImageData(0,0, img.width, img.height);
 
-                for (var i = imageData.data.length - 1; i >= 0; i--) {
-                    sourceImageData.data[i] = imageData.data[i];
-                }
+
+                // 1.5 init baseImage data with a black background
+                context.fillStyle = "black";
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                baseImageData = context.getImageData(0,0, img.width, img.height);
+
+
                 // 2.
                 
                 // var POSITION = 2;
@@ -49,9 +94,9 @@
                 // var CIRCLES = 300;
 
                 GA = new Genetic({ 
-                    popSize: 30,
-                    chromoLength: (1 + 2 + 1) * 100,
-                    mutationRate: 0.03,
+                    popSize: 20,
+                    chromoLength: (1 + 2 + 1) * 10,
+                    mutationRate: 0.3,
                     crossOverRate: 0.8,
                     maxPerturbation: 0.3,
                     numElite: 2,
@@ -60,53 +105,86 @@
                 GA.init();
 
 
-                function run() {
-                    // 3.
-                    
-                    maxFitness = -9999999;
-                    bestGenome = null;
-                    bestGenomeData = null;
+                function run(nTimes) {
+                    while(nTimes--) {
+                        generations++;
 
-                    // 4.
-                    
-                    population = GA.getPopulation();
-                    for(var genome of population) {
-                        var genomeData = convertToCanvasData(genome.weights, sourceImageData.data);
-                        genome.fitness = calculateFitness(genomeData, sourceImageData.data);
-                        if(maxFitness < genome.fitness) {
-                            maxFitness = genome.fitness;
-                            bestGenome = genome;
-                            bestGenomeData = genomeData;
+                        // 3.
+                        
+                        maxFitness = -9999999;
+                        bestGenome = null;
+                        bestGenomeData = null;
+
+                        // 4.
+                        
+                        population = GA.getPopulation();
+                        for(var genome of population) {
+                            var genomeData = convertToCanvasData(genome.weights, sourceImageData.data);
+                            genome.fitness = calculateFitness(genomeData, sourceImageData.data);
+                            if(maxFitness < genome.fitness) {
+                                maxFitness = genome.fitness;
+                                bestGenome = genome;
+                                bestGenomeData = genomeData;
+                            }
                         }
+
+                        // 5.
+                        
+                        for (var i = canvasImageData.data.length - 1; i >= 0; i--) {
+                            canvasImageData.data[i] = bestGenomeData[i];
+                        }
+                        context.putImageData(canvasImageData, 0,0);
+
+                        if(0 == generations % variables.saveEvery) {
+                            saveCurrentCanvas();
+                        }
+
+                        if(0 == generations % variables.circleSizeRatioStep) {
+                            variables.circleSizeRatio *= 0.99;
+                            variables.circleSizeRatio = Math.max(variables.circleSizeRatio, variables.minCircleSizeRatio);
+                        }
+                        // 6.
+
+                        GA.epoch();
+
+                        if(isRunning)
+                            setTimeout(run, variables.delay, variables.skip);
                     }
-
-                    // 5.
-                    
-                    for (var i = imageData.data.length - 1; i >= 0; i--) {
-                        imageData.data[i] = bestGenomeData[i];
-                    }
-                    context.putImageData(imageData, 0,0);
-
-                    // 6.
-
-                    GA.epoch();
-
-                    setTimeout(run, 10);
                 }
 
-                run();
+                start();
+
+                function start() {
+                    if(!isRunning) {
+                        isRunning = true;
+                        run(variables.skip);
+                    }
+                }
+
+                function step() {
+                    isRunning = false;
+                    run(variables.skip);
+                }
+
+                function pause() {
+                    isRunning = false;
+                }
+
+                function saveCurrentCanvas() {
+                    baseImageData = context.getImageData(0,0, img.width, img.height);
+                }
 
                 function convertToCanvasData(weights, data) {
 
-                    context.fillStyle="black";
-                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.putImageData(baseImageData, 0, 0);
                     
                     for (var i = 0; i < weights.length; i+=4) {
-                        var x = Math.floor(weights[i+0] * img.width);
-                        var y = Math.floor(weights[i+1] * img.height);
-                        var radius = Math.floor(weights[i+2] * img.width * 0.3);
+                        var x = Math.floor(weights[i+0] * canvas.width);
+                        var y = Math.floor(weights[i+1] * canvas.height);
+                        var radius = Math.floor(weights[i+2] * canvas.width * variables.circleSizeRatio);
+                        radius = Math.max(1, radius);
 
-                        var pixel = (x + img.width * y) * 4;
+                        var pixel = (x + canvas.width * y) * 4;
                         var r = data[pixel];
                         var g = data[pixel+1];
                         var b = data[pixel+2];
@@ -119,7 +197,7 @@
                         context.closePath();
                     }
 
-                    return context.getImageData(0,0,img.width, img.height).data;
+                    return context.getImageData(0,0,canvas.width, canvas.height).data;
                 }
 
                 function calculateFitness(genomeData, desiredData) {
