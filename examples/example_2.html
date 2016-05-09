@@ -8,7 +8,7 @@
         <script type="text/javascript" src="../libs/dat.gui.min.js"></script>
     </head>
     <body onload="init()">
-        <img id="desired-result" src="../images/desired-result-2.jpg"/>
+        <img id="desired-result" src="../images/desired-result-3.png"/>
         <canvas id="canvas" />
 
         <script type="text/javascript">
@@ -24,6 +24,7 @@
                     maxFitness,
                     bestGenome,
                     bestGenomeData,
+                    bestGenomeChanged,
                     canvasImageData,
                     sourceImageData,
                     baseImageData,
@@ -32,12 +33,6 @@
 
                 var variables = {
                     skip: 1,
-                    delay: 10,
-                    saveEvery: 10,
-                    reduceCircleSize: true,
-                    circleSizeRatioStep: 10,
-                    minCircleSizeRatio: 0.01,
-                    circleSizeRatio: 0.3,
                     start: start,
                     step: step,
                     pause: pause,
@@ -47,16 +42,10 @@
 
                 var gui = new dat.GUI();
 
-                gui.add(variables, 'delay', 1, 100).step(1);
-                gui.add(variables, 'saveEvery', 1, 100).step(1);
-                gui.add(variables, 'reduceCircleSize', true);
-                gui.add(variables, 'circleSizeRatioStep', 1, 100).step(1);
-                gui.add(variables, 'minCircleSizeRatio', 0, 0.5);
-                gui.add(variables, 'circleSizeRatio', 0, 0.5).listen();
                 gui.add(variables, 'start');
                 gui.add(variables, 'step');
                 gui.add(variables, 'pause');
-                gui.add(variables, 'save');
+                // gui.add(variables, 'save');
 
 
                 /* 
@@ -95,7 +84,7 @@
 
                 GA = new Genetic({ 
                     popSize: 20,
-                    chromoLength: (1 + 2 + 1) * 10,
+                    chromoLength: (1 + 2 + 1) * 50,
                     mutationRate: 0.3,
                     crossOverRate: 0.8,
                     maxPerturbation: 0.3,
@@ -104,16 +93,18 @@
                 });
                 GA.init();
 
+                // 3.
+                
+                maxFitness = -9999999;
+                bestGenome = null;
+                bestGenomeData = null;
+                bestGenomeChanged = false;
 
                 function run(nTimes) {
+
+
                     while(nTimes--) {
                         generations++;
-
-                        // 3.
-                        
-                        maxFitness = -9999999;
-                        bestGenome = null;
-                        bestGenomeData = null;
 
                         // 4.
                         
@@ -122,33 +113,33 @@
                             var genomeData = convertToCanvasData(genome.weights, sourceImageData.data);
                             genome.fitness = calculateFitness(genomeData, sourceImageData.data);
                             if(maxFitness < genome.fitness) {
+                                console.log(maxFitness, genome.fitness);
                                 maxFitness = genome.fitness;
                                 bestGenome = genome;
                                 bestGenomeData = genomeData;
+                                bestGenomeChanged = true;
                             }
                         }
 
-                        // 5.
-                        
+
                         for (var i = canvasImageData.data.length - 1; i >= 0; i--) {
                             canvasImageData.data[i] = bestGenomeData[i];
                         }
                         context.putImageData(canvasImageData, 0,0);
 
-                        if(0 == generations % variables.saveEvery) {
+                        // 5.
+
+                        if(bestGenomeChanged) {
                             saveCurrentCanvas();
+                            bestGenomeChanged = false;
                         }
 
-                        if(0 == generations % variables.circleSizeRatioStep) {
-                            variables.circleSizeRatio *= 0.99;
-                            variables.circleSizeRatio = Math.max(variables.circleSizeRatio, variables.minCircleSizeRatio);
-                        }
                         // 6.
 
                         GA.epoch();
 
                         if(isRunning)
-                            setTimeout(run, variables.delay, variables.skip);
+                            setTimeout(run, 1, variables.skip);
                     }
                 }
 
@@ -181,7 +172,7 @@
                     for (var i = 0; i < weights.length; i+=4) {
                         var x = Math.floor(weights[i+0] * canvas.width);
                         var y = Math.floor(weights[i+1] * canvas.height);
-                        var radius = Math.floor(weights[i+2] * canvas.width * variables.circleSizeRatio);
+                        var radius = weights[i+2] * 50;
                         radius = Math.max(1, radius);
 
                         var pixel = (x + canvas.width * y) * 4;
@@ -203,7 +194,7 @@
                 function calculateFitness(genomeData, desiredData) {
                     var fitness = 0;
                     var len = genomeData.length;
-                    for (var i = len - 1; i >= 0; i--) {
+                    for (var i = 0; i < len; i++) {
 
                         if(desiredData[i] == genomeData[i])
                             fitness += 1;

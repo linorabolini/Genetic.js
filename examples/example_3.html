@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GA example</title>
+        <link type="text/css" rel="stylesheet" href="../css/main.css"/></link>
+        <script type="text/javascript" src="../libs/genetic.js"></script>
+        <script type="text/javascript" src="../libs/underscore-min.js"></script>
+        <script type="text/javascript" src="../libs/dat.gui.min.js"></script>
+        <script   src="https://code.jquery.com/jquery-2.2.3.min.js"   integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo="   crossorigin="anonymous"></script>
+    </head>
+    <body onload="init()">
+        <img id="desired-result"/>
+        <canvas id="canvas" />
+        <input id="sourceFileInput" type="file" style="visibility:hidden" />
+        <input id="progressFileInput" type="file" style="visibility:hidden" />
+
+        <script type="text/javascript">
+            function init() {
+                //======================
+                // start point
+
+                var img,
+                    GA,
+                    sourceFileInput,
+                    progressFileInput,
+                    canvas,
+                    context,
+                    population,
+                    maxFitness,
+                    bestGenome,
+                    bestGenomeData,
+                    bestGenomeChanged,
+                    canvasImageData,
+                    sourceImageData,
+                    baseImageData,
+                    chromosomes,
+                    generations = 0,
+                    isRunning = false;
+
+                var variables = {
+                    skip: 1,
+                    start: start,
+                    step: step,
+                    pause: pause,
+                    shape: "circle",
+                    save: saveCurrentCanvas,
+                    uploadSource: uploadSourceImage,
+                    uploadProgress: uploadProgressImage
+                }
+
+
+                var gui = new dat.GUI();
+
+                gui.add(variables, 'start');
+                gui.add(variables, 'step');
+                gui.add(variables, 'pause');
+                // gui.add(variables, 'save');
+                gui.add(variables, 'shape', { circle: "circle", triangle: "triangle" } );
+                gui.add(variables, 'uploadSource');
+                gui.add(variables, 'uploadProgress');
+
+
+
+                /* 
+                    1. init canvas with image
+                    2. init GA algorithm
+                    3. reset
+                    4. calculate fitness 
+                    5. show best result
+                    6. do an epoch (reproduction, crossover, mutate)
+                    7. if not done, go to step 3
+                */
+
+                // 1.             
+                img = document.getElementById('desired-result');
+                canvas = document.getElementById('canvas');
+
+                sourceFileInput = $('#sourceFileInput');
+                sourceFileInput.on('change', function(e) {
+                    if(!e.target.files[0])
+                        return;
+
+                    img.onload = function() {
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        context = canvas.getContext('2d');
+                        context.drawImage(img, 0, 0, img.width, img.height);
+                        canvasImageData = context.getImageData(0,0, img.width, img.height);
+                        sourceImageData = context.getImageData(0,0, img.width, img.height);
+
+                        // 1.5 init baseImage data with a black background
+                        context.fillStyle = "black";
+                        context.fillRect(0, 0, canvas.width, canvas.height);
+                        baseImageData = context.getImageData(0,0, img.width, img.height);
+                    }
+
+                    img.src = URL.createObjectURL(e.target.files[0]);
+                });
+
+                progressFileInput = $('#progressFileInput');
+                progressFileInput.on('change', function(e) {
+                    if(!e.target.files[0])
+                        return;
+
+                    var image = new Image();
+                    image.onload = function() {
+                        context = canvas.getContext('2d');
+                        context.drawImage(image, 0, 0, image.width, image.height);
+                        baseImageData = context.getImageData(0,0, image.width, image.height);
+
+                        maxFitness = calculateFitness(baseImageData.data, sourceImageData.data);
+                    }
+
+                    image.src = URL.createObjectURL(e.target.files[0]);
+                });
+
+                // 2.
+                
+                // var POSITION = 2;
+                // var RADIUS = 1;
+                // var CIRCLES = 300;
+                chromosomes = 7;
+
+                GA = new Genetic({ 
+                    popSize: 50,
+                    chromoLength: chromosomes,
+                    mutationRate: 0.5,
+                    crossOverRate: 0.5,
+                    maxPerturbation: 0.2,
+                    numElite: 2,
+                    numCopiesElite: 2
+                });
+                GA.init();
+
+                // 3.
+                
+                maxFitness = -9999999;
+                bestGenome = null;
+                bestGenomeData = null;
+                bestGenomeChanged = false;
+
+                function run(nTimes) {
+                    while(nTimes--) {
+                        generations++;
+
+                        // 4.
+                        
+                        population = GA.getPopulation();
+                        for(var genome of population) {
+                            var genomeData = convertToCanvasData(genome.weights, sourceImageData.data);
+                            genome.fitness = calculateFitness(genomeData, sourceImageData.data);
+                            if(maxFitness < genome.fitness) {
+                                console.log("current max:" + maxFitness,
+                                            "new max: " + genome.fitness,
+                                            "total %" + (genome.fitness / sourceImageData.data.length) * 100);
+                                maxFitness = genome.fitness;
+                                bestGenome = genome;
+                                bestGenomeData = genomeData;
+                                bestGenomeChanged = true;
+                            } else {
+                                delete genomeData;
+                            }
+                        }
+
+                        if(bestGenomeData) {
+                            for (var i = canvasImageData.data.length - 1; i >= 0; i--) {
+                                canvasImageData.data[i] = bestGenomeData[i];
+                            }
+                            context.putImageData(canvasImageData, 0,0);
+                        }
+
+                        // 5.
+
+                        if(bestGenomeChanged) {
+                            saveCurrentCanvas();
+                            bestGenomeChanged = false;
+                        }
+
+                        // 6.
+
+                        GA.epoch();
+
+                        if(isRunning)
+                            setTimeout(run, 1, variables.skip);
+                    }
+                }
+
+                function start() {
+                    if(!isRunning) {
+                        isRunning = true;
+                        run(variables.skip);
+                    }
+                }
+
+                function step() {
+                    isRunning = false;
+                    run(variables.skip);
+                }
+
+                function pause() {
+                    isRunning = false;
+                }
+
+                function loadSourceImage() {
+                    sourceImageData;
+                }
+
+                function uploadSourceImage() {
+                    sourceFileInput.click();
+                }
+
+                function uploadProgressImage() {
+                    progressFileInput.click();
+                }
+
+                function saveCurrentCanvas() {
+                    baseImageData = context.getImageData(0,0, img.width, img.height);
+                }
+
+                function convertToCanvasData(weights, data) {
+
+                    context.putImageData(baseImageData, 0, 0);
+
+                    var i,x,y,pixel,r,g,b,a;
+                    
+                    for (i = 0; i < weights.length; i+=chromosomes) {
+
+                        switch(variables.shape) {
+                            case "triangle":
+                                context.beginPath();
+
+                                var x1,x2,x3,y1,y2,y3;
+
+                                x1 = Math.floor(weights[i+0] * canvas.width);
+                                y1 = Math.floor(weights[i+1] * canvas.height);
+                                x2 = Math.floor(weights[i+2] * canvas.width);
+                                y2 = Math.floor(weights[i+3] * canvas.height);
+                                x3 = Math.floor(weights[i+4] * canvas.width);
+                                y3 = Math.floor(weights[i+5] * canvas.height);
+
+                                context.moveTo(x1,y1);
+                                context.lineTo(x2,y2);
+                                context.lineTo(x3,y3);
+
+                                x = Math.floor((x1+x2+x3)/3);
+                                y = Math.floor((y1+y2+y3)/3);
+
+                                pixel = (x + canvas.width * y) * 4;
+                                r = data[pixel];
+                                g = data[pixel+1];
+                                b = data[pixel+2];
+                                a = weights[i+6];
+
+                                context.fillStyle = "rgba(" + r + "," + g + "," + b + "," + a + ")";
+                                context.fill();
+                                context.closePath();
+                                break;
+                            case "circle":
+                                var x = Math.floor(weights[i+0] * canvas.width);
+                                var y = Math.floor(weights[i+1] * canvas.height);
+                                var radius = weights[i+2] * 50;
+                                radius = Math.max(1, radius);
+
+                                var pixel = (x + canvas.width * y) * 4;
+                                var r = data[pixel];
+                                var g = data[pixel+1];
+                                var b = data[pixel+2];
+                                var a = weights[i+3];
+
+                                context.beginPath();
+                                context.arc(x, y, radius, 0, 2 * Math.PI, false);
+                                context.fillStyle = "rgba(" + r + "," + g + "," + b + "," + a + ")";
+                                context.fill();
+                                context.closePath();
+                                break;
+                        }
+                    }
+
+                    return context.getImageData(0,0,canvas.width, canvas.height).data;
+                }
+
+                function calculateFitness(genomeData, desiredData) {
+                    var fitness = 0;
+                    var len = genomeData.length;
+                    for (var i = 0; i < len; i++) {
+
+                        if(desiredData[i] == genomeData[i])
+                            fitness += 1;
+
+                         // fitness += (127 - Math.abs(desiredData[i] - genomeData[i]))/1000;
+                    }
+                    return fitness;
+                }
+            }
+        </script>
+    </body>
+</html>

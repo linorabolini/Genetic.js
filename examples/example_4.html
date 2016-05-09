@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GA example</title>
+        <link type="text/css" rel="stylesheet" href="../css/main.css"/></link>
+        <script type="text/javascript" src="../libs/genetic.js"></script>
+        <script type="text/javascript" src="../libs/underscore-min.js"></script>
+        <script type="text/javascript" src="../libs/dat.gui.min.js"></script>
+        <script   src="https://code.jquery.com/jquery-2.2.3.min.js"   integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo="   crossorigin="anonymous"></script>
+        <script type="text/javascript">
+            function UF(count) {
+                this.count = count;
+                this.ids = [];
+                this.sizes = [];
+
+                var i;
+                for(i=0; i<count; ++i)
+                    this.ids[i] = i;
+                for(i=0; i<count; ++i)
+                    this.sizes[i] = 1;
+            }
+
+            UF.prototype.connected = function (p, q) {
+                this.find(p) == this.find(q);
+            }
+
+            UF.prototype.find = function (p) {
+                while (p != this.ids[p])
+                    p = this.ids[p];
+                return p;
+            }
+
+            UF.prototype.connect = function (p, q) {
+                var i = this.find(p);
+                var j = this.find(q);
+                if (i == j) return;
+
+               // Make smaller root point to larger one.
+                if (this.sizes[i] < this.sizes[j]) {
+                    this.ids[i] = j;
+                    this.sizes[j] += this.sizes[i];
+                } else {
+                    this.ids[j] = i;
+                    this.sizes[i] += this.sizes[j];
+                }
+                this.count--;
+            }
+        </script>
+    </head>
+    <body onload="init()">
+        <canvas id="canvas" />
+
+        <script type="text/javascript">
+            function init() {
+                //======================
+                // start point
+
+                var variables = {
+                    start: start,
+                    step: step,
+                    pause: pause,
+                    reset: reset,
+                    shape: "circle",
+                    colors: 20,
+                    radius: 8,
+                    lineWidth: 9,
+                    separation: 18,
+
+                }
+
+                var gui = new dat.GUI();
+                gui.add(variables, 'start');
+                gui.add(variables, 'step');
+                gui.add(variables, 'pause');
+                gui.add(variables, 'reset');
+                gui.add(variables, 'shape', {
+                    "circle":"circle",
+                    "square":"square",
+                    "none": "none"
+                });
+                gui.add(variables, 'colors', 1, 100);
+                gui.add(variables, 'radius', 0, 20);
+                gui.add(variables, 'lineWidth', 0, 20);
+                gui.add(variables, 'separation', 1, 40);
+
+                /* 
+                    1. init canvas
+                */
+
+                // 1.             
+                var canvas = document.getElementById('canvas');
+
+                function Grid(rows, cols) {
+                    this.rows = rows;
+                    this.cols = cols;
+                    this.connections = [];
+                    this.union = new UF(rows * cols);
+
+                    this.colors = [];
+
+                    for (var i = 0; i <= this.rows * this.cols; i++) {
+                        var r = Math.floor(Math.random() * 255);
+                        var g = Math.floor(Math.random() * 255);
+                        var b = Math.floor(Math.random() * 255);
+                        var a = 1;
+                        // this.colors.push("#000000");
+                        this.colors.push("rgba(" + r + "," + g + "," + b + "," + a + ")");
+                    }
+                }
+
+                Grid.prototype.connect = function (x, y, dirX, dirY) {
+
+                    if(x+dirX < 0 || y+dirY < 0 || x+dirX > this.cols -1 || y+dirY > this.rows -1)
+                        return 
+
+                    var p = y * this.rows + x;
+                    var q = (y+dirY) * this.rows + (x+dirX);
+
+                    if(this.union.connected(p,q) || this.union.find(q) != q)
+                        return
+
+                    this.union.connect(p, q);
+
+                    this.connections.push({
+                        x1: x,
+                        y1: y,
+                        x2: x + dirX,
+                        y2: y + dirY
+                    });
+                }
+
+                Grid.prototype.getPointColor = function (x,y) {
+                    var p = y * this.rows + x;
+                    var cid = this.union.find(p);
+
+                    cid = map(cid, 0, this.colors.length, 0, variables.colors);
+                    return this.colors[Math.floor(cid)];
+                }
+
+                Grid.prototype.draw = function (canvas) {
+                    var ctx = canvas.getContext("2d");
+                    var separation = variables.separation;
+                    var radius = variables.radius;
+                    var lineWidth = variables.lineWidth;
+
+                    canvas.width = separation * this.cols + separation;
+                    canvas.height = separation * this.rows + separation;
+                    ctx.lineWidth= lineWidth;
+
+                    for (var x = 0; x < this.cols; x++) {
+                        for (var y = 0; y < this.rows; y++) {
+
+                            
+                            ctx.fillStyle = this.getPointColor(x,y);
+
+                            var shapeX = (x + 1) * separation;
+                            var shapeY = (y + 1) * separation;
+
+                            switch(variables.shape) {
+                                case "circle":
+                                    ctx.beginPath();
+                                    ctx.arc(shapeX, shapeY, radius, 0, 2 * Math.PI, false);
+                                    ctx.fill();
+                                    ctx.closePath();
+                                break;
+                                case "square":
+                                    ctx.fillRect(shapeX-radius,shapeY-radius,radius*2,radius*2);
+                                break;
+                            }
+
+                        }
+                    }
+
+                    if(lineWidth > 0) {
+                        for (var c = 0; c < this.connections.length; c++) {
+                            var connection = this.connections[c];
+
+                            ctx.strokeStyle = this.getPointColor(connection.x1, connection.y1);
+
+                            ctx.beginPath();
+                            ctx.moveTo((connection.x1 + 1)  * separation, (connection.y1 + 1)  * separation);
+                            ctx.lineTo((connection.x2 + 1) * separation, (connection.y2 + 1)  * separation);
+                            ctx.stroke();
+                        }
+                    }
+                }
+
+                var size;
+                var grid;
+                var isRunning;
+                var connectionsPerRun;
+                var thread;
+
+                function run(number) {
+
+                    if(isRunning) {
+                        var n = number;
+                        while(n--) {
+                            var x = Math.floor(Math.random() * grid.cols);
+                            var y = Math.floor(Math.random() * grid.rows);
+
+                            if(Math.random() > 0.5) {
+                                grid.connect(x, y, randomDir(), 0);
+                            } else {
+                                grid.connect(x, y, 0, randomDir());
+                            }
+                        }
+                    }
+
+                    grid.draw(canvas);
+
+                    thread = setTimeout(run, 1, number);
+                }
+
+                function start() {
+                    if(!isRunning) {
+                        isRunning = true;
+                        run(connectionsPerRun);
+                    } else {
+                        pause();
+                    }
+                }
+
+                function step() {
+                    isRunning = true;
+                    clearTimeout(thread);
+                    run(connectionsPerRun);
+                    clearTimeout(thread);
+                    isRunning = false;
+                }
+
+                function pause() {
+                    isRunning = false;
+                }
+
+                function reset() {
+                    size = 30;
+                    grid = new Grid(size, size);
+                    isRunning = false;
+                    connectionsPerRun = 10;
+                    clearTimeout(thread);
+                    start();
+                }
+
+                function randomDir() {
+                    var rnd = Math.ceil(Math.random() * 3);
+                    return rnd - 2;
+                }
+
+                function lerp(a, b, c) {
+                    return  (1 - c) * a + b * c;
+                }
+
+                function map(value, istart, istop, ostart, ostop) {
+                    return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+                }
+
+                reset();
+            }
+        </script>
+    </body>
+</html>
